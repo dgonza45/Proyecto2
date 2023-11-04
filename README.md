@@ -3,7 +3,7 @@
  
 ## Integrantes del equipo
 	Jorge A. Villarreal
- 	Daniel Gonzalez
+ 	Daniel Gonzalez Bernal
   	Martin Villegas
 
 ## Profesor
@@ -14,261 +14,214 @@
 
 ## Objetivos logrados en el proyecto
 
-1. Desplegamos con éxito un clúster de Kubernetes utilizando el software microk8s en cuatro máquinas virtuales en Google Cloud Platform (GPC), cumpliendo con el requisito de no utilizar un clúster como servicio administrado por GCP.
-2. Implementamos un controlador de Ingress.
-3. Desplegamos una aplicación Wordpress en la nube GCP, alojada en un clúster de Kubernetes basado en microk8s.
-4. Desplegamos una base de datos (postgres) en el mismo cluster.
-5. Creamos un repositorio en GitHub para el reto4 con todas las fuentes de la aplicación, adaptación, documentación, y otros componentes relacionados.
-6. Logramos configurar un servidor de NFS para ser usado como volumen por microk8s según su [tutorial](https://microk8s.io/docs/nfs).
+1. Se creo y desplego con exito un cluster de Kubernetes utilizando servicios administrados por GCP (Google Cloud Platform).
+2. Se configuro Wordpress, un NFS (Network File System) y una base de datos MySQL en el cluster
+3. Asignamos una ip estatica para facilitar el ingreso al cluster desde un cliente externo.
+4. Se asigno el dominio https://retouniversidadeafit.xyz/ a la IP del cluster.
+
+
 
 ## Objetivos No Logrados:
-1. A pesar de tener funcionando la base de datos y la aplicación de wordpress, la conexión entre ellas falla.
-2. Un nombre de dominio.
+Todo el proyecto se logro
 
-
-![imagen](https://github.com/jovillarrealm/jovillarrealm-st0263/assets/88699002/acdff9d7-7655-4b73-a57b-ef3fab5ca293)
 
 
 
 ## Instrucciones configuracion y creación proyecto
 
-#### Primero se crean las VM de los nodos y del líder con E2-MICRO Y Ubuntu 22.04 y se corre:
+Antes de comenzar
+Si eres nuevo en Google Cloud, crea una cuenta para evaluar el rendimiento de nuestros productos en situaciones reales. Los clientes nuevos obtienen $300 en créditos gratuitos para ejecutar, probar e implementar cargas de trabajo.
+En la página del selector de proyectos de la consola de Google Cloud, selecciona o crea un proyecto de Google Cloud.
+
+
+Asegúrate de que la facturación esté habilitada para tu proyecto de Google Cloud.
+
+En la consola de Google Cloud, activa Cloud Shell.
+
+Activar Cloud Shell
+
+En la parte inferior de la consola de Google Cloud, se inicia una sesión de Cloud Shell en la que se muestra una ventana de línea de comandos. Cloud Shell es un entorno de shell con Google Cloud CLI ya instalada y con valores ya establecidos para el proyecto actual. La sesión puede tardar unos segundos en inicializarse.
+
+En Cloud Shell, habilita las API de administrador de GKE y Cloud SQL:
+
+gcloud services enable container.googleapis.com sqladmin.googleapis.com
+Configura tu entorno
+En Cloud Shell, configura la región predeterminada para Google Cloud CLI:
+
+
+gcloud config set compute/region region
+Reemplaza lo siguiente:
+
+region: Elige la región más cercana a ti. Para obtener más información, consulta Regiones y zonas.
+Configura la variable de entorno PROJECT_ID como el ID de tu proyecto de Google Cloud (project-id).
+
+
+export PROJECT_ID=project-id
+Descarga los archivos de manifiesto de la app desde el repositorio de GitHub:
+
+
+git clone https://github.com/GoogleCloudPlatform/kubernetes-engine-samples
+Cambia al directorio con el archivo wordpress-persistent-disks:
+
+
+cd kubernetes-engine-samples/wordpress-persistent-disks
+Establece la variable de entorno WORKING_DIR:
+
+
+WORKING_DIR=$(pwd)
+Para este instructivo, debes crear objetos de Kubernetes mediante archivos de manifiesto en formato YAML.
+
+Crea un clúster de GKE
+Debes crear un clúster de GKE para alojar tu contenedor de app de WordPress.
+
+En Cloud Shell, crea un clúster de GKE llamado persistent-disk-tutorial:
+
+
+CLUSTER_NAME=persistent-disk-tutorial
+gcloud container clusters create-auto $CLUSTER_NAME
+Una vez creada, conéctate al clúster nuevo:
+
+
+gcloud container clusters get-credentials $CLUSTER_NAME --region REGION
+Crea un PV y un PVC con el respaldo de Persistent Disk
+Crear un PVC como almacenamiento requerido para WordPress GKE tiene un recurso StorageClass predeterminado instalado que te permite aprovisionar de manera dinámica los PV con el respaldo de Persistent Disk. Tienes que usar el archivo wordpress-volumeclaim.yaml a fin de crear los PVC necesarios para la implementación.
+
+Con este archivo de manifiesto se describe un PVC que solicita 200 GB de almacenamiento. No se definió un recurso StorageClass en el archivo, por lo que este PVC usa el recurso predeterminado StorageClass para aprovisionar un PV con el respaldo de Persistent Disk.
+
+En Cloud Shell, implementa el archivo de manifiesto:
+
+
+kubectl apply -f $WORKING_DIR/wordpress-volumeclaim.yaml
+Puede tardar hasta diez segundos en aprovisionar el PV con el respaldo de Persistent Disk y vincularlo a tu PVC. Puedes verificar el estado con el siguiente comando:
+
+
+kubectl get persistentvolumeclaim
+El resultado muestra una PersistentVolumeClaim con un estado de Pending, similar al siguiente:
+
+
+NAME                    STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+wordpress-volumeclaim   Pending                                      standard-rwo   5s
+Este PersistentVolumeClaim permanece en el estado Pending hasta que lo uses más adelante en este instructivo.
+
+Crea una instancia de Cloud SQL para MySQL
+En Cloud Shell, crea una instancia llamada mysql-wordpress-instance:
+
+
+INSTANCE_NAME=mysql-wordpress-instance
+gcloud sql instances create $INSTANCE_NAME
+Agrega el nombre de la conexión de la instancia como una variable de entorno:
+
+
+export INSTANCE_CONNECTION_NAME=$(gcloud sql instances describe $INSTANCE_NAME \
+    --format='value(connectionName)')
+Crea una base de datos para que WordPress almacene sus datos:
+
+
+gcloud sql databases create wordpress --instance $INSTANCE_NAME
+Crea un usuario de base de datos llamado wordpress y una contraseña para que WordPress se autentique en la instancia:
+
+
+CLOUD_SQL_PASSWORD=$(openssl rand -base64 18)
+gcloud sql users create wordpress --host=% --instance $INSTANCE_NAME \
+    --password $CLOUD_SQL_PASSWORD
+Si cierras tu sesión de Cloud Shell, perderás la contraseña. Anótala porque la necesitarás más adelante en este instructivo.
+
+Terminaste de configurar la base de datos para tu nuevo blog de WordPress.
+
+Implementa WordPress
+Antes de implementar WordPress, debes crear una cuenta de servicio. Debes crear un secreto de Kubernetes que contenga las credenciales de la cuenta de servicio y otro para las credenciales de la base de datos.
+
+Configura una cuenta de servicio y crea secretos
+Para permitir que tu app de WordPress acceda a la instancia de MySQL a través de un proxy de Cloud SQL, crea una cuenta de servicio:
+
+
+SA_NAME=cloudsql-proxy
+gcloud iam service-accounts create $SA_NAME --display-name $SA_NAME
+Agrega la dirección de correo electrónico de la cuenta de servicio como una variable de entorno:
+
+
+SA_EMAIL=$(gcloud iam service-accounts list \
+    --filter=displayName:$SA_NAME \
+    --format='value(email)')
+Agrega la función cloudsql.client a tu cuenta de servicio:
+
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --role roles/cloudsql.client \
+    --member serviceAccount:$SA_EMAIL
+Crea una clave para la cuenta de servicio:
+
+
+gcloud iam service-accounts keys create $WORKING_DIR/key.json \
+    --iam-account $SA_EMAIL
+Este comando descarga una copia del archivo key.json.
+
+Crea un secreto de Kubernetes para las credenciales de MySQL:
+
+
+kubectl create secret generic cloudsql-db-credentials \
+    --from-literal username=wordpress \
+    --from-literal password=$CLOUD_SQL_PASSWORD
+Crea un secreto de Kubernetes para las credenciales de la cuenta de servicio:
+
+
+kubectl create secret generic cloudsql-instance-credentials \
+    --from-file $WORKING_DIR/key.json
+
     
-    
-	sudo snap refresh
-    
-	
-#### En cada maquina instalamos el microk8s con : 
-    
-	sudo snap install microk8s --classic
-    
+Implementa WordPress
+El siguiente paso es implementar tu contenedor de WordPress en el clúster de GKE.
 
-#### Además corremos el siguiente comando para otorgar permisos de superusuario y no tener que estar utilizando sudo para cada comando que se corre:
-	
-    sudo usermod -a -G microk8s $(whoami)
-    
+Con el archivo de manifiesto wordpress_cloudsql.yaml, se describe una implementación que crea un solo pod, el cual ejecuta un contenedor con una instancia de WordPress. Este contenedor lee la variable de entorno WORDPRESS_DB_PASSWORD que contiene el secreto cloudsql-db-credentials que creaste.
 
-#### En la máquina que va a ser el líder (control plane) usamos el código (se corre por cada máquina nueva): 
-    
-	microk8s add-node
-![WhatsApp Image 2023-10-20 at 7 33 58 PM](https://github.com/jovillarrealm/jovillarrealm-st0263/assets/60147106/20dc0853-5f27-4be2-90d4-590616f52d52)
+Este archivo de manifiesto también configura el contenedor de WordPress para que se comunique con MySQL a través del proxy de Cloud SQL que se ejecuta en el contenedor del archivo adicional. El valor de la dirección del host se configura en la variable de entorno WORDPRESS_DB_HOST.
 
-	
-#### De acá obtenemos los códigos únicos para más adelante utilizar en cada máquina y poderla conectar al líder.
+Para preparar el archivo de implementación, reemplaza la variable de entorno INSTANCE_CONNECTION_NAME:
 
 
-#### Cuando se tienen los códigos necesarios se corre la siguiente línea en cada máquina para conectarse al líder:
-    
-	microk8s join 10.128.0.11:25000/834739147cdfa9bb857e7b1f19b0de70/d997f5f24439
-    
+cat $WORKING_DIR/wordpress_cloudsql.yaml.template | envsubst > \
+    $WORKING_DIR/wordpress_cloudsql.yaml
+Implementa el archivo de manifiesto wordpress_cloudsql.yaml:
 
 
-#### Luego para revisar que los nodos ya hacen parte del cluster, usamos el código:
-    
-	microk8s kubectl get nodes
-    
-![Screen Shot 2023-10-26 at 12 07 22 AM](https://github.com/jovillarrealm/jovillarrealm-st0263/assets/60147106/cde55766-a40e-49b2-bf76-d86004127d9e)
+kubectl create -f $WORKING_DIR/wordpress_cloudsql.yaml
+La implementación de este archivo de manifiesto toma unos minutos mientras Persistent Disk se conecta al nodo de procesamiento.
+
+Mira la implementación para ver el cambio de estado a running:
 
 
-#### En el nodo principal creamos la base de datos definiendo una configuración por medio de un archivo yaml y luego aplicamos los cambios de esa configuración por medio del siguiente comando: 
-    
-	microk8s kubectl apply -f mysql-statefulset.yaml
-    
+kubectl get pod -l app=wordpress --watch
+Cuando en el resultado se muestre un estado de Running, puedes continuar con el siguiente paso.
 
 
-#### Luego para ver las bases de datos que tenemos corremos el siguiente comando (debe mostrar 2 por configurar 2 réplicas):
-    
-	microk8s kubectl get pods
-    
+NAME                     READY     STATUS    RESTARTS   AGE
+wordpress-387015-02xxb   2/2       Running   0          2m47s
+Expón el servicio de WordPress
+En el paso anterior, implementaste un contenedor de WordPress, pero actualmente, no se puede acceder a este desde fuera del clúster porque no tiene una dirección IP externa. Puedes exponer la app de WordPress al tráfico de Internet mediante la creación y la configuración de un servicio de Kubernetes con un balanceador de cargas externo adjunto. Para obtener más información sobre cómo exponer apps mediante servicios en GKE, consulta la guía práctica.
+
+Crea un Service de type:LoadBalancer:
 
 
-#### Y para ver todos los servicios que se están corriendo en el cluster lo hacemos con el comando (My service es el load balancer):
-    
-	microk8s kubectl get svc
-    
-![WhatsApp Image 2023-10-25 at 11 52 54 PM](https://github.com/jovillarrealm/jovillarrealm-st0263/assets/60147106/bc52598b-d779-4b87-bfce-09a6a6a24b5f)
+kubectl create -f $WORKING_DIR/wordpress-service.yaml
+La creación de un balanceador de cargas toma unos minutos.
+
+Mira la implementación y espera a que el servicio tenga asignada una dirección IP externa:
 
 
-
-#### NFS
-
-El directorio que va a ser usado es `/srv/nfs` que va a ser expuesto a la subred 10.128.0.0/24 pero debería cambiarse a la subred en la que esté trabajando el cluster (en este caso la VPC de GCP). La siguiente configuración debe hacerse en el servidor que vaya a servir de almacenamiento.
-
-Install kubernetes CSI driver
-
-    sudo apt-get install -y nfs-kernel-server
-    sudo mkdir -p /srv/nfs
-    sudo chown nobody:nogroup /srv/nfs
-    sudo chmod 0777 /srv/nfs
-    sudo mv /etc/exports /etc/exports.bak
-
-    echo '/srv/nfs 10.128.0.0/24(rw,sync,no_subtree_check)' | sudo tee /etc/exports
-
-    sudo systemctl restart nfs-kernel-server
-    microk8s enable helm3
-    microk8s helm3 repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
-    microk8s helm3 repo update
-    microk8s helm3 install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
-        --namespace kube-system \
-        --set kubeletDir=/var/snap/microk8s/common/var/lib/kubelet
-    microk8s kubectl wait pod --selector app.kubernetes.io/name=csi-driver-nfs --for condition=ready --namespace kube-system
-    microk8s kubectl get csidrivers
-
-Tambien vamos a hacer un storage class para tener nfs en un servidor específico que vaya a ser usado, en este caso se necesita cambiar la IP Privada (de GCP, no en cluster) 10.128.0.47. (Este comando es para crear el archivo dinamicamente, pero ya también está creado).
-
-    cat <<EOF > sc-nfs.yaml
-    apiVersion: storage.k8s.io/v1
-    kind: StorageClass
-    metadata:
-        name: nfs-csi
-    provisioner: nfs.csi.k8s.io
-    parameters:
-        server: 10.128.0.47
-        share: /srv/nfs
-    reclaimPolicy: Delete
-    volumeBindingMode: Immediate
-    mountOptions:
-        - hard
-        - nfsvers=4.1
-    EOF
-
-Se aplica y se chequea
-
-    microk8s kubectl apply -f - < sc-nfs.yaml
-    microk8s kubectl get sc
-
-#### BD
-
-Para tener la base de datos vamos a necesitar un pv, pvc, configuración en forma de un ConfigMap, y un Deployment que va a ser expuesto de un servicio. Aquí se pueden crear los archivos correspondientes copiando lo siguiente. (Se omite el yaml del deployment dado que no requiere configurar).
-
-    cat <<EOF > postgres-config.yaml
-    apiVersion: v1
-    kind: ConfigMap
-    metadata:
-        name: postgres-config
-        labels:
-            app: postgres
-    data:
-        POSTGRES_DB: postgresdb
-        POSTGRES_USER: admin
-        POSTGRES_PASSWORD: psltest
-
-    EOF
-    
-    cat <<EOF > postgres-pv.yaml
-    kind: PersistentVolume
-    apiVersion: v1
-    metadata:
-        name: postgres-pv-volume  # Sets PV's name
-        labels:
-            type: local  # Sets PV's type to local
-            app: postgres
-    spec:
-        storageClassName: manual
-        capacity:
-            storage: 5Gi # Sets PV Volume
-        accessModes:
-            - ReadWriteMany
-        hostPath:
-            path: "/mnt/data"
-    EOF
-
-    cat <<EOF > postgres-pvc.yaml
-    kind: PersistentVolumeClaim
-    apiVersion: v1
-    metadata:
-        name: postgres-pv-claim  # Sets name of PVC
-        labels:
-            app: postgres
-    spec:
-        storageClassName: manual
-        accessModes:
-            - ReadWriteMany  # Sets read and write access
-        resources:
-            requests:
-                storage: 5Gi  # Sets volume size
-    EOF
-
-    cat <<EOF > postgres-service.yaml
-    apiVersion: v1
-    kind: Service
-    metadata:
-        name: postgres # Sets service name
-        labels:
-            app: postgres # Labels and Selectors
-    spec:
-        type: NodePort # Sets service type
-        ports:
-            - port: 5432 # Sets port to run the postgres application
-        selector:
-            app: postgres
-    EOF
-
-Y se crean las cosas
-
-    microk8s kubectl apply -f postgres-config.yaml
-    microk8s kubectl apply -f postgres-pv.yaml
-    microk8s kubectl apply -f postgres-pvc.yaml
-    microk8s kubectl apply -f postgres-deployment.yaml
-    microk8s kubectl apply -f postgres-service.yaml
-
-#### WordPress
-
-Para tener wordpress vamos a usar cositas bonitas SIN EL LOAD BALANCER AAAAAAAAAAAAAAAAAAAAA
-
-    cat <<EOF > wordpress-service.yaml
-    kind: Service
-    apiVersion: v1
-    metadata:
-      name: wordpress-service
-    spec:
-      type: NodePort
-      selector:
-        app: wordpress
-    ports:
-      - name: http
-        protocol: TCP
-        port: 80
-        targetPort: 80
-        nodePort: 30007
-    EOF
-Y luego se construye con el deployment, servicio e ingress.
+kubectl get svc -l app=wordpress --watch
+Cuando en el resultado se muestre una dirección IP externa, puedes continuar con el siguiente paso. Ten en cuenta que tu IP externa es diferente en el siguiente ejemplo.
 
 
-La conexión entre wordpress y postgres está mal enotnces para reproducir la pantalla mostrada al principio solo se suben los servicios necesarios para wordpress. 
+NAME        CLUSTER-IP      EXTERNAL-IP    PORT(S)        AGE
+wordpress   10.51.243.233   203.0.113.3    80:32418/TCP   1m
+Toma nota del campo de dirección EXTERNAL_IP para usarlo luego.
 
-    microk8s kubectl apply -f wordpress-nfs-pvc.yaml
-    microk8s kubectl apply -f wordpress-deployment.yaml
-    microk8s kubectl describe pvc wordpress-nfs-pvc
-    microk8s kubectl apply -f wordpress-service.yaml
-    microk8s kubectl apply -f wordpress-ingress.yaml
-    microk8s kubectl get all -o wide
-
-Para un postgres que sirve autocontenido está
-
-    microk8s kubectl apply -f postgres-pv.yaml
-    microk8s kubectl apply -f postgres-pvc.yaml
-    microk8s kubectl apply -f postgres-deployment.yaml
-    microk8s kubectl apply -f postgres-service.yaml
-
-Si se necesita borrar
-
-    microk8s kubectl delete ingress wordpress-ingress
-    microk8s kubectl delete svc wordpress-service
-    microk8s kubectl delete deployment wordpress-deployment
-    microk8s kubectl delete pvc wordpress-nfs-pvc
-
-    microk8s kubectl delete svc postgres-service
-    microk8s kubectl delete deployment postgres
-    microk8s kubectl delete pvc postgres-pv-claim
-    microk8s kubectl delete pv postgres-pv-volume
 
 
 
 
 
 ## Referencias
-	- https://microk8s.io/docs/nfs
- 	- https://www.airplane.dev/blog/deploy-postgres-on-kubernetes
- 	- https://engr-syedusmanahmad.medium.com/wordpress-on-kubernetes-cluster-step-by-step-guide-749cb53e27c7
-  	- https://www.youtube.com/watch?v=DCoBcpOA7W4
+
+Todo el tutorial anterior esta basado en el tutorial de Google y solo realizamos cambios menores en algunos codigos:
+- https://cloud.google.com/kubernetes-engine/docs/tutorials/persistent-disk?hl=es-419
