@@ -222,7 +222,9 @@ Toma nota del campo de dirección EXTERNAL_IP para usarlo luego.
 
 
 
+## Video
 
+https://www.youtube.com/watch?v=PoBWpFBvUh8
 
 ## Referencias
 
