@@ -49,22 +49,25 @@ Configura tu entorno
 En Cloud Shell, configura la región predeterminada para Google Cloud CLI:
 
 
-gcloud config set compute/region region
+gcloud config set compute/region region 
 Reemplaza lo siguiente:
-
+	gcloud config set compute/region us-central1
 region: Elige la región más cercana a ti. Para obtener más información, consulta Regiones y zonas.
 Configura la variable de entorno PROJECT_ID como el ID de tu proyecto de Google Cloud (project-id).
 
 
 export PROJECT_ID=project-id
 Descarga los archivos de manifiesto de la app desde el repositorio de GitHub:
+	export PROJECT_ID=proyecto-2-404022
 
 
-git clone https://github.com/GoogleCloudPlatform/kubernetes-engine-samples
-Cambia al directorio con el archivo wordpress-persistent-disks:
+	git clone [https://github.com/GoogleCloudPlatform/kubernetes-engine-samples](https://github.com/dgonza45/Proyecto2)
+Cambia al directorio p2 e ingrese al directorio cloudsql para la base de datos manejada y mysql para lo otro:
 
 
-cd kubernetes-engine-samples/wordpress-persistent-disks
+	cd Proyecto2/cloudsql
+o
+	cd Proyecto2/mysql
 Establece la variable de entorno WORKING_DIR:
 
 
